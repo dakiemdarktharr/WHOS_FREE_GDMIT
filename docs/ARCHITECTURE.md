@@ -24,9 +24,16 @@ All entered dates and hours are interpreted in the submitting user's IANA timezo
 │   └── server/                      # Express + TypeScript API and Socket.io
 │       └── src/
 │           ├── models/              # Mongoose Room and Schedule models
-│           ├── routes/              # REST route handlers
+│           ├── routes/              # REST route handlers (rooms, schedules, health)
 │           ├── services/            # ScheduleCalculator and room services
-│           └── socket/              # Socket.io event handlers
+│           ├── socket/              # Socket.io event handlers and broadcast helpers
+│           ├── middleware/          # Zod request validation and centralized errors
+│           ├── config/              # Environment validation (Zod) and CORS origins
+│           ├── db/                  # MongoDB connection handling
+│           ├── lib/                 # Room codes, timezone math, shared types, Zod schemas
+│           ├── tests/               # Unit tests (calculator, validation, codes, time)
+│           ├── app.ts               # Express app assembly
+│           └── index.ts             # Bootstrap: config → db → http → socket → listen
 ├── docs/
 │   ├── ARCHITECTURE.md              # This file: system and behavior contract
 │   ├── API_ROUTES.md                # HTTP request/response contract
@@ -49,6 +56,12 @@ type Room = {
   roomCode: string;        // exactly 5 numeric characters, unique
   creatorTimezone: string; // IANA timezone
   status: RoomStatus;
+  resultVersion: number;   // increments once per completed computation
+  result: {                // latest CalculationResult; null until first FINISHED
+    sharedWindow: SharedWindow | null;
+    recommendations: Recommendation[];
+    explanation: string | null;
+  } | null;
   createdAt: Date;
 };
 ```
@@ -95,6 +108,8 @@ The web app may proxy these paths through Next.js rewrites so the browser uses o
 | `room:join` | client → server | `{ roomCode, userId, userName }` | Validate membership, join Socket.io room, emit current member state to caller. |
 | `room:user_updated` | server → room | `{ userId, userName, isSubmitted, memberCount, submittedCount }` | Broadcast presence/submission progress without exposing another user's busy hours. |
 | `room:state_change` | server → room | `{ status, resultVersion, result? }` | Broadcast `COMPUTING` and `FINISHED` transitions plus the latest ranked result. |
+| `room:joined` | server → caller | `{ roomCode, status, memberCount, submittedCount, resultVersion }` | Current state for the joining socket after a valid `room:join`. Members may reconnect to a `FINISHED` room; new members must join over REST first. |
+| `room:join_error` | server → caller | `{ code, message }` | Rejection of `room:join`: `VALIDATION_ERROR`, `ROOM_NOT_FOUND`, or `NOT_A_MEMBER`. |
 
 Socket.io is the live transport for room coordination. MongoDB remains the source of truth; socket events are notifications and must be safe to replay after a reconnect.
 
@@ -106,6 +121,11 @@ Socket.io is the live transport for room coordination. MongoDB remains the sourc
 4. `ESC` closes the inspector without losing the current draft; explicit submit persists the complete schedule.
 5. The room remains `COLLECTING` until all currently joined members submit. The server changes status to `COMPUTING`, calculates results, then changes status to `FINISHED` and broadcasts the result.
 6. A member may resubmit. That returns the room to `COMPUTING` and increments `resultVersion`.
+7. Computation runs synchronously inside the submit request; `COMPUTING` is the transient state broadcast between schedule persistence and the `FINISHED` transition. The room document stores `resultVersion` and the latest `result`, so `GET /api/rooms/:roomCode/result` is authoritative after a reconnect without re-running the calculator.
+
+## Health endpoint
+
+`GET /health` reports process uptime and the MongoDB connection state. It is excluded from the `/api` surface and performs no database queries.
 
 ## Overlapping date boundary algorithm
 
@@ -125,7 +145,7 @@ busyCount      = number of members whose normalized busy set contains the slot
 availableCount = submittedMemberCount - busyCount
 ```
 
-Sort ascending by `busyCount`, then ascending by UTC instant. Return the top result window size defined in the API contract. The UI converts each returned UTC instant into the viewer's local timezone for display. Never calculate by comparing raw local hour integers across timezones.
+Sort ascending by `busyCount`, then ascending by UTC instant. Return the top 12 slots (the top result window size defined in the API contract). If no slot is free for every member, the top slots are the minimum-conflict ones and the result carries an explanation. The UI converts each returned UTC instant into the viewer's local timezone for display. Never calculate by comparing raw local hour integers across timezones.
 
 ## Non-negotiable invariants
 

@@ -5,6 +5,23 @@ MongoDB is the durable source of truth. Mongoose models live in `apps/server/src
 ## `rooms` collection
 
 ```ts
+const RecommendationSchema = new Schema({
+  startsAtUtc: { type: String, required: true },
+  busyCount: { type: Number, required: true, min: 0 },
+  availableCount: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
+const SharedWindowSchema = new Schema({
+  start: { type: String, required: true },
+  end: { type: String, required: true }
+}, { _id: false });
+
+const RoomResultSchema = new Schema({
+  sharedWindow: { type: SharedWindowSchema, default: null },
+  recommendations: { type: [RecommendationSchema], default: [] },
+  explanation: { type: String, default: null }
+}, { _id: false });
+
 const RoomSchema = new Schema({
   roomCode: { type: String, required: true, unique: true, match: /^\\d{5}$/ },
   creatorTimezone: { type: String, required: true },
@@ -14,13 +31,17 @@ const RoomSchema = new Schema({
     default: "COLLECTING",
     required: true
   },
+  resultVersion: { type: Number, default: 0, required: true },
+  result: { type: RoomResultSchema, default: null },
   createdAt: { type: Date, default: Date.now, required: true }
 });
-
-RoomSchema.index({ roomCode: 1 }, { unique: true });
 ```
 
+The `unique: true` declaration on `roomCode` creates the unique index directly; the explicit `RoomSchema.index({ roomCode: 1 }, { unique: true })` call was removed because Mongoose would otherwise register the same index twice and warn on every connection.
+
 The `roomCode` uniqueness constraint is the final collision guard after cryptographic generation. The server must retry a duplicate-key insert rather than return a duplicate code.
+
+`resultVersion` increments once per completed computation (including recomputations after a resubmit). `result` holds the latest `CalculationResult` and stays `null` until the first `FINISHED` transition, so `GET /api/rooms/:roomCode/result` can answer authoritatively after a reconnect without re-running the calculator.
 
 ## `schedules` collection
 
@@ -45,6 +66,8 @@ ScheduleSchema.index({ roomId: 1, isSubmitted: 1 });
 ```
 
 `busySlots` is a complete replacement on submission. The service validates dates, deduplicates hours, sorts hours, and rejects any value outside the contract before calling `findOneAndUpdate` with `{ upsert: true }`.
+
+A schedule document doubles as the room membership record: joining a room (or creating one) upserts a schedule with `isSubmitted: false` and empty `busySlots`. `memberCount` and `submittedCount` are therefore counts over this collection, and a schedule is addressable only by `(roomId, userId)`.
 
 ## State transitions
 

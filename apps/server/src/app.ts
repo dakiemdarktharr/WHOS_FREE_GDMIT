@@ -1,0 +1,23 @@
+import express, { type Express } from "express";
+import cors from "cors";
+import { corsOrigins } from "./config/env.js";
+import { errorHandler, notFoundHandler } from "./middleware/error.js";
+import healthRouter from "./routes/health.js";
+import roomsRouter from "./routes/rooms.js";
+import schedulesRouter from "./routes/schedules.js";
+
+/** Assemble the Express app with the documented /api surface. */
+export function createApp(): Express {
+  const app = express();
+  app.disable("x-powered-by");
+  app.use(cors({ origin: corsOrigins() }));
+  app.use(express.json({ limit: "256kb" }));
+
+  app.use("/health", healthRouter);
+  app.use("/api/rooms", roomsRouter);
+  app.use("/api/schedules", schedulesRouter);
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+  return app;
+}
