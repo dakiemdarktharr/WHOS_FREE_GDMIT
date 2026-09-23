@@ -177,6 +177,20 @@ describe("calculateScheduleResult", () => {
     });
   });
 
+  it("ranks the actual 23 and 25 hours on daylight saving transition days", () => {
+    const spring = rankCandidateSlots([
+      member("a", LOS_ANGELES, [{ date: "2026-03-08", hours: [2] }]),
+    ]);
+    assert.equal(spring.recommendations.length, 23);
+    assert.ok(spring.recommendations.every((slot) => slot.busyCount === 0));
+
+    const fall = rankCandidateSlots([
+      member("a", LOS_ANGELES, [{ date: "2026-11-01", hours: [1] }]),
+    ]);
+    assert.equal(fall.recommendations.length, 25);
+    assert.equal(fall.recommendations.filter((slot) => slot.busyCount === 1).length, 2);
+  });
+
   it("treats a member with no saved days as free everywhere", () => {
     // B has no saved days: it constrains nothing and is never busy, so
     // the window comes from A alone and every slot counts A's hours only.

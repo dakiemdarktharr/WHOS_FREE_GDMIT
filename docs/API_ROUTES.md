@@ -10,6 +10,7 @@ Base URL: the Express server's `/api` prefix. The Next.js web app may proxy thes
 - Invalid input: `400` with `{ "error": { "code": "VALIDATION_ERROR", "message": string, "fields"?: object } }`.
 - Missing room: `404` with `{ "error": { "code": "ROOM_NOT_FOUND", "message": "Room not found." } }`.
 - Join on a finished room: `409` with `{ "error": { "code": "ROOM_FINISHED", "message": string } }`.
+- Schedule submission by a user who has not created or joined the room: `403` with `{ "error": { "code": "NOT_A_MEMBER", "message": string } }`.
 - Rate limited: `429` with `{ "error": { "code": "RATE_LIMITED", "message": string } }`. The `/api` surface allows 120 requests per minute per IP; the room mutations (`create`, `join`, `submit`) allow 30 per minute per IP. The five-digit room code is short by product design, so these limits raise the cost of enumerating codes.
 - Unknown route: `404` with `{ "error": { "code": "NOT_FOUND", "message": string } }`.
 - Server failure: `500` with `{ "error": { "code": "INTERNAL_ERROR", "message": string } }`.
@@ -88,6 +89,7 @@ Response `200`:
 ## `POST /api/schedules/submit`
 
 Atomically replaces the caller's schedule for a room. The caller's `busySlots` may include days with empty `hours` arrays to explicitly mark fully-free days. `roomId` is optional; when present it must be the MongoDB ObjectId of the room identified by `roomCode`. Duplicate dates are merged (union of hours); duplicate hours are deduplicated and sorted before persistence.
+The caller must already have a membership record created by the create or join endpoint. A submission never creates a new member.
 
 Request:
 
@@ -136,7 +138,8 @@ Response `200` while collecting:
   "submittedCount": 2,
   "resultVersion": 0,
   "sharedWindow": null,
-  "recommendations": []
+  "recommendations": [],
+  "explanation": null
 }
 ```
 

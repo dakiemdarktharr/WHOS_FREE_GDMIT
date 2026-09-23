@@ -137,6 +137,7 @@ candidateEnd   = min(memberWindowEnd   for every submitted member)
 ```
 
 If `candidateStart > candidateEnd`, the room has no shared date window and the result is an empty list with an explanatory status. Otherwise, enumerate each local calendar day in the intersection, convert each member's 0..23 local hours to UTC instants using that member's IANA timezone, and evaluate one-hour UTC slots.
+On daylight saving transitions, a nonexistent local hour contributes no UTC slot and a repeated local hour contributes both UTC slots. Marking that repeated hour busy marks both occurrences busy.
 
 For each candidate UTC hour:
 

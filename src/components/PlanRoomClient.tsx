@@ -14,11 +14,29 @@ type RoomSnapshot = {
   submittedCount: number;
   resultVersion?: number;
   recommendations: Recommendation[];
+  explanation?: string | null;
 };
 type RoomContext = { userId: string; userName: string; timezone: string; roomId: string };
 type UserUpdate = Member & { memberCount: number; submittedCount: number };
 
 const participantKey = "whos-free-participant";
+
+function draftKey(roomCode: string, userId: string) {
+  return `whos-free-draft:${roomCode}:${userId}`;
+}
+
+function readDraft(roomCode: string, userId: string): Record<string, number[]> {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(draftKey(roomCode, userId)) || "{}");
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+    return Object.fromEntries(Object.entries(stored).filter(([date, hours]) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(date) && Array.isArray(hours) &&
+      hours.every((hour) => Number.isInteger(hour) && hour >= 0 && hour <= 23),
+    )) as Record<string, number[]>;
+  } catch {
+    return {};
+  }
+}
 
 function browserContext(roomCode: string): RoomContext {
   const fallbackTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -77,7 +95,7 @@ export function PlanRoomClient({ code }: { code: string }) {
         setContext(updated);
         window.localStorage.setItem(`whos-free-room:${code}`, JSON.stringify(updated));
       }
-      setStatus("Room is live");
+      setStatus("Room loaded");
       setError("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load this room.");
@@ -89,6 +107,7 @@ export function PlanRoomClient({ code }: { code: string }) {
     const nextContext = browserContext(code);
     contextRef.current = nextContext;
     setContext(nextContext);
+    setAvailability(readDraft(code, nextContext.userId));
     setMembers([{ userId: nextContext.userId, userName: nextContext.userName, isSubmitted: false }]);
     void loadRoom(nextContext);
   }, [code, loadRoom]);
@@ -98,10 +117,15 @@ export function PlanRoomClient({ code }: { code: string }) {
     const socketUrl = process.env.NEXT_PUBLIC_API_URL || window.location.origin;
     const socket: Socket = io(socketUrl, { transports: ["websocket", "polling"] });
     socket.on("connect", () => {
-      setStatus("Room is live");
+      setStatus("Live updates connected");
       socket.emit("room:join", { roomCode: code, userId: context.userId, userName: context.userName });
     });
     socket.on("connect_error", () => setStatus("Reconnecting…"));
+    socket.on("room:joined", () => void loadRoom());
+    socket.on("room:join_error", (failure: { message?: string }) => {
+      setError(failure.message || "Could not join live updates.");
+      setStatus("Live updates unavailable");
+    });
     socket.on("room:user_updated", (update: UserUpdate) => {
       setMembers((current) => {
         const found = current.some((member) => member.userId === update.userId);
@@ -130,7 +154,15 @@ export function PlanRoomClient({ code }: { code: string }) {
   function toggleHour(hour: number) {
     const next = editorHours.includes(hour) ? editorHours.filter((value) => value !== hour) : [...editorHours, hour].sort((a, b) => a - b);
     setEditorHours(next);
-    if (editingDate) setAvailability((saved) => ({ ...saved, [editingDate]: next }));
+    if (editingDate) setAvailability((saved) => {
+      const updated = { ...saved, [editingDate]: next };
+      try {
+        window.localStorage.setItem(draftKey(code, context.userId), JSON.stringify(updated));
+      } catch {
+        // The in-memory draft remains available for this visit.
+      }
+      return updated;
+    });
   }
 
   async function submitSchedule() {
@@ -167,7 +199,7 @@ export function PlanRoomClient({ code }: { code: string }) {
 
   const submittedCount = room?.submittedCount ?? members.filter((member) => member.isSubmitted).length;
   const memberCount = Math.max(room?.memberCount ?? 0, members.length);
-  const allSubmitted = Boolean(room && memberCount > 0 && submittedCount === memberCount);
+  const allSubmitted = room?.status === "FINISHED";
   const currentMember = members.find((member) => member.userId === context.userId);
   const today = DateTime.now().setZone(context.timezone);
 
@@ -201,9 +233,9 @@ export function PlanRoomClient({ code }: { code: string }) {
             <div className="member-list">{members.map((member) => <div className="member-row" key={member.userId}><span className="avatar" aria-hidden="true">{member.userName.slice(0, 1).toUpperCase()}</span><span className="member-name">{member.userName}{member.userId === context.userId && <small>you</small>}</span><span className={`member-status ${member.isSubmitted ? "ready" : "waiting"}`}>{member.isSubmitted ? "submitted" : "marking"}</span></div>)}
               {memberCount > members.length && <p className="member-count-note">{memberCount - members.length} more {memberCount - members.length === 1 ? "member" : "members"} in this room</p>}
             </div>
-            <button type="button" className="primary-button wide-button" onClick={() => void submitSchedule()} disabled={submitting || Boolean(currentMember?.isSubmitted)}>{submitting ? "Sending your hours…" : currentMember?.isSubmitted ? "Schedule submitted" : "Submit my schedule"}</button>
+            <button type="button" className="primary-button wide-button" onClick={() => void submitSchedule()} disabled={submitting || !room}>{submitting ? "Sending your hours…" : currentMember?.isSubmitted ? "Update my schedule" : "Submit my schedule"}</button>
           </section>
-          <section className={`recommendation-card cel-panel ${allSubmitted ? "is-ready" : ""}`}><div className="card-heading"><h2>quietest overlap</h2><span className="sparkle" aria-hidden="true">✦</span></div>{allSubmitted ? <><p className="recommendation-intro">The room found the soft spots. Fewer busy marks means more people can show up.</p><div className="recommendation-list">{room?.recommendations.slice(0, 5).map((recommendation) => <div className="recommendation-row" key={recommendation.startsAtUtc}><strong>{formatSlot(recommendation.startsAtUtc, context.timezone)}</strong><span>{recommendation.availableCount} free · {recommendation.busyCount} busy</span></div>)}</div>{!room?.recommendations.length && <p>No shared times found yet.</p>}</> : <div className="waiting-state"><span className="orbit-icon" aria-hidden="true">◌</span><p>Waiting for everyone to submit. The good times will bubble up here.</p></div>}</section>
+          <section className={`recommendation-card cel-panel ${allSubmitted ? "is-ready" : ""}`}><div className="card-heading"><h2>quietest overlap</h2><span className="sparkle" aria-hidden="true">✦</span></div>{allSubmitted ? <><p className="recommendation-intro">The room found the soft spots. Fewer busy marks means more people can show up.</p>{room?.explanation && <p>{room.explanation}</p>}<div className="recommendation-list">{room?.recommendations.slice(0, 5).map((recommendation) => <div className="recommendation-row" key={recommendation.startsAtUtc}><strong>{formatSlot(recommendation.startsAtUtc, context.timezone)}</strong><span>{recommendation.availableCount} free · {recommendation.busyCount} busy</span></div>)}</div>{!room?.recommendations.length && !room?.explanation && <p>No shared times found yet.</p>}</> : <div className="waiting-state"><span className="orbit-icon" aria-hidden="true">◌</span><p>Waiting for everyone to submit. The good times will bubble up here.</p></div>}</section>
           {error && <p className="form-error" role="alert">{error}</p>}
         </aside>
       </div>

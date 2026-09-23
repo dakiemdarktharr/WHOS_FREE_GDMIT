@@ -47,6 +47,22 @@ function timezoneOffsetMs(timezone: string, utcMs: number): number {
   return wallAsUtc - utcMs;
 }
 
+/** Every UTC instant represented by a local hour (zero during a DST gap, two during a fold). */
+export function localHourToUtcIsos(date: string, hour: number, timezone: string): string[] {
+  const [year, month, day] = date.split("-").map(Number);
+  const wallAsUtc = Date.UTC(year, month - 1, day, hour);
+  const offsets = new Set([
+    timezoneOffsetMs(timezone, wallAsUtc - DAY_MS),
+    timezoneOffsetMs(timezone, wallAsUtc),
+    timezoneOffsetMs(timezone, wallAsUtc + DAY_MS),
+  ]);
+  return [...offsets]
+    .map((offset) => wallAsUtc - offset)
+    .filter((utcMs) => timezoneOffsetMs(timezone, utcMs) === wallAsUtc - utcMs)
+    .sort((a, b) => a - b)
+    .map((utcMs) => new Date(utcMs).toISOString());
+}
+
 /**
  * Convert a local calendar date + hour in `timezone` to a UTC ISO string.
  * Non-existent local times (spring-forward gap) settle on a valid adjacent

@@ -6,6 +6,7 @@ import {
   isIanaTimezone,
   isValidCalendarDate,
   localHourToUtcIso,
+  localHourToUtcIsos,
   utcDayNumberToDate,
 } from "../lib/time.js";
 
@@ -55,6 +56,19 @@ describe("localHourToUtcIso", () => {
       iso === "2026-03-08T09:00:00.000Z" || iso === "2026-03-08T10:00:00.000Z",
       `expected an adjacent valid instant, got ${iso}`,
     );
+  });
+});
+
+describe("localHourToUtcIsos", () => {
+  it("omits the nonexistent spring-forward hour", () => {
+    assert.deepEqual(localHourToUtcIsos("2026-03-08", 2, "America/Los_Angeles"), []);
+  });
+
+  it("includes both occurrences of the fall-back hour", () => {
+    assert.deepEqual(localHourToUtcIsos("2026-11-01", 1, "America/Los_Angeles"), [
+      "2026-11-01T08:00:00.000Z",
+      "2026-11-01T09:00:00.000Z",
+    ]);
   });
 });
 

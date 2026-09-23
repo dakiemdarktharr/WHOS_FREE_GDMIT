@@ -4,7 +4,7 @@ import type {
   Recommendation,
   SharedWindow,
 } from "../lib/types.js";
-import { enumerateDates, isValidCalendarDate, localHourToUtcIso } from "../lib/time.js";
+import { enumerateDates, isValidCalendarDate, localHourToUtcIsos } from "../lib/time.js";
 
 /** Number of ranked slots returned as recommendations. */
 export const TOP_RESULT_COUNT = 12;
@@ -50,7 +50,9 @@ export function rankCandidateSlots(schedules: MemberSchedule[]): FullRanking {
       if (!isValidCalendarDate(day.date)) continue;
       for (const hour of day.hours) {
         if (hour < 0 || hour > 23) continue;
-        instants.add(localHourToUtcIso(day.date, hour, schedule.userTimezone));
+        for (const instant of localHourToUtcIsos(day.date, hour, schedule.userTimezone)) {
+          instants.add(instant);
+        }
       }
     }
     return instants;
@@ -64,7 +66,9 @@ export function rankCandidateSlots(schedules: MemberSchedule[]): FullRanking {
   for (const schedule of schedules) {
     for (const date of dates) {
       for (let hour = 0; hour < 24; hour += 1) {
-        candidates.add(localHourToUtcIso(date, hour, schedule.userTimezone));
+        for (const instant of localHourToUtcIsos(date, hour, schedule.userTimezone)) {
+          candidates.add(instant);
+        }
       }
     }
   }

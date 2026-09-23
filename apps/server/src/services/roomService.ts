@@ -221,22 +221,12 @@ export async function submitSchedule(input: {
   const run = async (session: mongoose.ClientSession | null) => {
     const options = session ? { session } : {};
 
-    // Re-checked inside the unit so a room finishing concurrently cannot
-    // be raced into accepting a stranger's upsert. (Every member of a
-    // FINISHED room is submitted by invariant, so existence suffices.)
-    const freshRoom = await Room.findOne({ _id: room._id }, null, options);
-    if (freshRoom?.status === "FINISHED") {
-      const membershipCount = await Schedule.countDocuments(
-        { roomId: room._id, userId: input.userId },
-        options,
-      );
-      if (membershipCount === 0) {
-        throw new AppError(
-          409,
-          "ROOM_FINISHED",
-          "This room has already finished collecting schedules.",
-        );
-      }
+    const membershipCount = await Schedule.countDocuments(
+      { roomId: room._id, userId: input.userId },
+      options,
+    );
+    if (membershipCount === 0) {
+      throw new AppError(403, "NOT_A_MEMBER", "Join the room before submitting a schedule.");
     }
 
     await Schedule.findOneAndUpdate(
@@ -250,7 +240,7 @@ export async function submitSchedule(input: {
           updatedAt: new Date(),
         },
       },
-      { upsert: true, setDefaultsOnInsert: true, ...options },
+      { new: true, ...options },
     );
 
     const { memberCount, submittedCount } = await countMembers(room._id, session);
@@ -333,6 +323,7 @@ export interface RoomResultResponse {
   resultVersion: number;
   sharedWindow: SharedWindow | null;
   recommendations: CalculationResult["recommendations"];
+  explanation: string | null;
 }
 
 /**
@@ -353,5 +344,6 @@ export async function getRoomResult(roomCode: string): Promise<RoomResultRespons
     resultVersion: room.resultVersion,
     sharedWindow: finishedResult?.sharedWindow ?? null,
     recommendations: finishedResult?.recommendations ?? [],
+    explanation: finishedResult?.explanation ?? null,
   };
 }

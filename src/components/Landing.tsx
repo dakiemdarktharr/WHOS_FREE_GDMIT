@@ -53,7 +53,7 @@ export function Landing() {
       const room = body.room;
       const roomCode = room?.roomCode as string | undefined;
       if (!roomCode || !/^\d{5}$/.test(roomCode)) throw new Error("The server returned an invalid Plan ID.");
-      window.localStorage.setItem(`whos-free-room:${roomCode}`, JSON.stringify({ ...context, roomId: room._id ?? room.id ?? body.roomId ?? "" }));
+      window.localStorage.setItem(`whos-free-room:${roomCode}`, JSON.stringify({ ...context, roomId: room.roomId ?? "" }));
       router.push(`/room/${roomCode}` as Route);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create a plan.");
