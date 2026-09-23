@@ -107,6 +107,7 @@ input::placeholder { color: #9a98b5; }
 .recommendation-row { display: flex; flex-direction: column; gap: 3px; border: 2px solid var(--ink); padding: 10px; background: var(--paper); }
 .recommendation-row strong { font-size: 13px; }
 .recommendation-row span { color: var(--aqua-dark); font-size: 11px; font-weight: 900; }
+.recommendation-row .available-members { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; }
 
 .editor-shell { display: grid; place-items: center; padding: 42px clamp(18px, 6vw, 100px); }
 .editor-panel { width: min(100%, 1180px); padding: clamp(23px, 5vw, 60px); background: var(--paper); }

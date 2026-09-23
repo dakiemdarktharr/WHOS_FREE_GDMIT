@@ -5,6 +5,7 @@ import { AppError } from "../middleware/error.js";
 import { generateUniqueRoomCode } from "../lib/roomCode.js";
 import { normalizeBusySlots } from "../lib/validation.js";
 import { calculateScheduleResult } from "./scheduleCalculator.js";
+import { recommendedTimeSpans, type RoomMember, type TimeSpan } from "./roomSnapshot.js";
 import { broadcastToRoom } from "../socket/index.js";
 import { supportsTransactions } from "../db/connect.js";
 import type {
@@ -103,9 +104,8 @@ export interface JoinRoomResult {
 }
 
 /**
- * Join or refresh a room member. Unknown rooms 404; finished rooms reject
- * new members. A fresh member without a submission moves a COMPUTING room
- * back to COLLECTING.
+ * Join or refresh a room member. A fresh member moves a completed or
+ * computing room back to collection without erasing existing submissions.
  */
 export async function joinRoom(input: {
   roomCode: string;
@@ -115,10 +115,6 @@ export async function joinRoom(input: {
 }): Promise<JoinRoomResult> {
   const room = await Room.findOne({ roomCode: input.roomCode });
   if (!room) throw new AppError(404, "ROOM_NOT_FOUND", "Room not found.");
-  if (room.status === "FINISHED") {
-    throw new AppError(409, "ROOM_FINISHED", "This room has already finished collecting schedules.");
-  }
-
   const existing = await Schedule.findOne({ roomId: room._id, userId: input.userId });
   if (existing) {
     await Schedule.updateOne(
@@ -134,13 +130,14 @@ export async function joinRoom(input: {
       busySlots: [],
       isSubmitted: false,
     });
-    if (room.status === "COMPUTING") {
-      room.status = "COLLECTING";
-      await room.save();
-    }
+    await Room.updateOne(
+      { _id: room._id, status: { $in: ["COMPUTING", "FINISHED"] } },
+      { $set: { status: "COLLECTING", result: null } },
+    );
   }
 
   const { memberCount, submittedCount } = await countMembers(room._id);
+  const currentRoom = await Room.findById(room._id);
   broadcastToRoom(input.roomCode, "room:user_updated", {
     userId: input.userId,
     userName: input.userName,
@@ -152,7 +149,7 @@ export async function joinRoom(input: {
   return {
     roomId: String(room._id),
     roomCode: input.roomCode,
-    status: room.status,
+    status: currentRoom?.status ?? "COLLECTING",
     memberCount,
     submittedCount,
   };
@@ -320,9 +317,11 @@ export interface RoomResultResponse {
   status: RoomStatus;
   memberCount: number;
   submittedCount: number;
+  members: RoomMember[];
   resultVersion: number;
   sharedWindow: SharedWindow | null;
   recommendations: CalculationResult["recommendations"];
+  timeSpans: TimeSpan[];
   explanation: string | null;
 }
 
@@ -333,17 +332,35 @@ export interface RoomResultResponse {
 export async function getRoomResult(roomCode: string): Promise<RoomResultResponse> {
   const room = await Room.findOne({ roomCode });
   if (!room) throw new AppError(404, "ROOM_NOT_FOUND", "Room not found.");
-  const { memberCount, submittedCount } = await countMembers(room._id);
-  const finishedResult = room.status === "FINISHED" ? room.result : null;
+  const schedules = await Schedule.find({ roomId: room._id }).sort({ _id: 1 });
+  const members = schedules.map(({ userId, userName, isSubmitted }) => ({
+    userId, userName, isSubmitted,
+  }));
+  const memberCount = members.length;
+  const submittedCount = members.filter((member) => member.isSubmitted).length;
+  const status = room.status === "FINISHED" && submittedCount < memberCount
+    ? "COLLECTING" : room.status;
+  const finishedResult = status === "FINISHED" ? room.result : null;
+  const recommendations = finishedResult?.recommendations ?? [];
   return {
     roomId: String(room._id),
     roomCode: room.roomCode,
-    status: room.status,
+    status,
     memberCount,
     submittedCount,
+    members,
     resultVersion: room.resultVersion,
     sharedWindow: finishedResult?.sharedWindow ?? null,
-    recommendations: finishedResult?.recommendations ?? [],
+    recommendations,
+    timeSpans: finishedResult
+      ? recommendedTimeSpans(recommendations, schedules.map((schedule) => ({
+        userId: schedule.userId,
+        userName: schedule.userName,
+        userTimezone: schedule.userTimezone,
+        isSubmitted: schedule.isSubmitted,
+        busySlots: toBusySlots(schedule),
+      })))
+      : [],
     explanation: finishedResult?.explanation ?? null,
   };
 }

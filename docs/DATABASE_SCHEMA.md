@@ -76,12 +76,15 @@ COLLECTING ── all joined schedules submitted ──▶ COMPUTING
 COMPUTING  ── calculator succeeds              ──▶ FINISHED
 COMPUTING  ── member resubmits                 ──▶ COMPUTING
 FINISHED   ── member resubmits                 ──▶ COMPUTING
+FINISHED   ── new member joins                 ──▶ COLLECTING
 ```
 
 The room status update and the schedule upsert must happen in a transaction when MongoDB is running as a replica set, including MongoDB Atlas. If a transaction is unavailable in local development, the service must make the schedule write idempotent and recompute from a fresh read before broadcasting `FINISHED`.
 
+When a new member joins a finished room, clear the stored result while keeping existing submissions and `resultVersion`. A subsequent completed calculation increments `resultVersion`.
+
 ## Privacy and query boundaries
 
-- `GET /api/rooms/:roomCode/result` returns aggregate counts and recommendations, never another user's raw busy hours.
+- `GET /api/rooms/:roomCode/result` returns the participant roster, aggregate counts, recommendations, and names of members free during recommended time spans, never another user's raw busy hours.
 - A schedule is addressable only by `(roomId, userId)` inside a validated room membership flow.
 - Do not store MongoDB credentials, Ably keys, or deployment tokens in this repository.

@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DateTime } from "luxon";
 import { io, type Socket } from "socket.io-client";
+import { contextForJoin, readRoomContext, saveRoomContext, type RoomContext } from "@/lib/room-session";
 
 type Member = { userId: string; userName: string; isSubmitted: boolean };
 type Recommendation = { startsAtUtc: string; busyCount: number; availableCount: number };
+type TimeSpan = {
+  startsAtUtc: string;
+  endsAtUtc: string;
+  busyCount: number;
+  availableCount: number;
+  availableMembers: Pick<Member, "userId" | "userName">[];
+};
 type RoomSnapshot = {
   roomCode: string;
   roomId?: string;
@@ -13,13 +21,11 @@ type RoomSnapshot = {
   memberCount: number;
   submittedCount: number;
   resultVersion?: number;
+  members: Member[];
   recommendations: Recommendation[];
+  timeSpans: TimeSpan[];
   explanation?: string | null;
 };
-type RoomContext = { userId: string; userName: string; timezone: string; roomId: string };
-type UserUpdate = Member & { memberCount: number; submittedCount: number };
-
-const participantKey = "whos-free-participant";
 
 function draftKey(roomCode: string, userId: string) {
   return `whos-free-draft:${roomCode}:${userId}`;
@@ -38,29 +44,18 @@ function readDraft(roomCode: string, userId: string): Record<string, number[]> {
   }
 }
 
-function browserContext(roomCode: string): RoomContext {
-  const fallbackTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  try {
-    const participant = JSON.parse(window.localStorage.getItem(participantKey) || "{}") as Partial<RoomContext>;
-    const room = JSON.parse(window.localStorage.getItem(`whos-free-room:${roomCode}`) || "{}") as Partial<RoomContext>;
-    return {
-      userId: room.userId || participant.userId || crypto.randomUUID(),
-      userName: room.userName || participant.userName || "Guest",
-      timezone: room.timezone || participant.timezone || fallbackTimezone,
-      roomId: room.roomId || "",
-    };
-  } catch {
-    return { userId: crypto.randomUUID(), userName: "Guest", timezone: fallbackTimezone, roomId: "" };
-  }
-}
-
 function monthDays(timezone: string) {
   const start = DateTime.now().setZone(timezone).startOf("month");
   return Array.from({ length: start.daysInMonth ?? 0 }, (_, index) => start.plus({ days: index }));
 }
 
-function formatSlot(iso: string, timezone: string) {
-  return DateTime.fromISO(iso).setZone(timezone).toFormat("ccc, LLL d · h a");
+function formatSpan(startIso: string, endIso: string, timezone: string) {
+  const start = DateTime.fromISO(startIso).setZone(timezone);
+  const end = DateTime.fromISO(endIso).setZone(timezone);
+  const endLabel = start.hasSame(end, "day")
+    ? end.toFormat("h:mm a")
+    : end.toFormat("ccc, LLL d · h:mm a");
+  return `${start.toFormat("ccc, LLL d · h:mm a")} – ${endLabel}`;
 }
 
 async function responseBody(response: Response) {
@@ -80,20 +75,22 @@ export function PlanRoomClient({ code }: { code: string }) {
   const [status, setStatus] = useState("Connecting the room…");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [joinName, setJoinName] = useState("");
+  const [joining, setJoining] = useState(false);
   const days = useMemo(() => monthDays(context.timezone), [context.timezone]);
 
   const loadRoom = useCallback(async (nextContext?: RoomContext) => {
     try {
-      const result = await responseBody(await fetch(`/api/rooms/${code}/result`, { cache: "no-store" })) as RoomSnapshot & { roomId?: string; members?: Member[] };
+      const result = await responseBody(await fetch(`/api/rooms/${code}/result`, { cache: "no-store" })) as RoomSnapshot & { roomId?: string };
       setRoom(result);
-      if (Array.isArray(result.members)) setMembers(result.members);
+      setMembers(result.members);
       const activeContext = nextContext || contextRef.current;
       const roomId = activeContext.roomId || result.roomId || "";
-      if (roomId && roomId !== activeContext.roomId) {
+      if (activeContext.userId && roomId && roomId !== activeContext.roomId) {
         const updated = { ...activeContext, roomId };
         contextRef.current = updated;
         setContext(updated);
-        window.localStorage.setItem(`whos-free-room:${code}`, JSON.stringify(updated));
+        saveRoomContext(code, updated);
       }
       setStatus("Room loaded");
       setError("");
@@ -104,11 +101,12 @@ export function PlanRoomClient({ code }: { code: string }) {
   }, [code]);
 
   useEffect(() => {
-    const nextContext = browserContext(code);
+    const nextContext = readRoomContext(code) || {
+      userId: "", userName: "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", roomId: "",
+    };
     contextRef.current = nextContext;
     setContext(nextContext);
-    setAvailability(readDraft(code, nextContext.userId));
-    setMembers([{ userId: nextContext.userId, userName: nextContext.userName, isSubmitted: false }]);
+    setAvailability(nextContext.userId ? readDraft(code, nextContext.userId) : {});
     void loadRoom(nextContext);
   }, [code, loadRoom]);
 
@@ -129,13 +127,7 @@ export function PlanRoomClient({ code }: { code: string }) {
       setError(failure.message || "Could not join live updates.");
       setStatus("Live updates unavailable");
     });
-    socket.on("room:user_updated", (update: UserUpdate) => {
-      setMembers((current) => {
-        const found = current.some((member) => member.userId === update.userId);
-        return found ? current.map((member) => member.userId === update.userId ? { ...member, ...update } : member) : [...current, update];
-      });
-      setRoom((current) => current ? { ...current, memberCount: update.memberCount, submittedCount: update.submittedCount } : current);
-    });
+    socket.on("room:user_updated", () => void loadRoom());
     socket.on("room:state_change", () => void loadRoom());
     return () => { socket.disconnect(); };
   }, [code, context.userId, context.userName, loadRoom]);
@@ -205,11 +197,56 @@ export function PlanRoomClient({ code }: { code: string }) {
     }
   }
 
+  async function joinThisRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = joinName.trim();
+    if (!name) return;
+    setJoining(true);
+    setError("");
+    try {
+      const nextContext = contextForJoin(code, name);
+      const joined = await responseBody(await fetch("/api/rooms/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomCode: code,
+          userId: nextContext.userId,
+          userName: name,
+          userTimezone: nextContext.timezone,
+        }),
+      })) as { roomId: string };
+      const activeContext = { ...nextContext, roomId: joined.roomId };
+      saveRoomContext(code, activeContext);
+      contextRef.current = activeContext;
+      setContext(activeContext);
+      setAvailability(readDraft(code, activeContext.userId));
+      await loadRoom(activeContext);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not join this room.");
+    } finally {
+      setJoining(false);
+    }
+  }
+
   const submittedCount = room?.submittedCount ?? members.filter((member) => member.isSubmitted).length;
-  const memberCount = Math.max(room?.memberCount ?? 0, members.length);
+  const memberCount = room?.memberCount ?? members.length;
   const allSubmitted = room?.status === "FINISHED";
   const currentMember = members.find((member) => member.userId === context.userId);
   const today = DateTime.now().setZone(context.timezone);
+
+  if (!context.userId) {
+    return <main className="landing-shell"><section className="launch-panel cel-panel" aria-label="Join this room">
+      <div className="panel-tab">join a plan</div>
+      <h1>Join plan {code}</h1>
+      <p>{room ? `${room.memberCount} ${room.memberCount === 1 ? "person" : "people"} already here` : "Loading the room…"}</p>
+      <form onSubmit={(event) => void joinThisRoom(event)}>
+        <label htmlFor="room-join-name">Your name</label>
+        <input id="room-join-name" value={joinName} onChange={(event) => setJoinName(event.target.value)} maxLength={40} autoComplete="name" required />
+        <button className="primary-button" disabled={joining || !room}>{joining ? "Joining…" : "Join this room"}</button>
+      </form>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </section></main>;
+  }
 
   if (editingDate) {
     return <HourEditor date={editingDate} hours={editorHours} timezone={context.timezone} onToggle={toggleHour} onSave={() => setEditingDate(null)} onClose={() => setEditingDate(null)} />;
@@ -238,12 +275,10 @@ export function PlanRoomClient({ code }: { code: string }) {
         </section>
         <aside className="room-sidebar">
           <section className="members-card cel-panel"><div className="card-heading"><h2>the crew</h2><span>{submittedCount}/{memberCount} submitted</span></div>
-            <div className="member-list">{members.map((member) => <div className="member-row" key={member.userId}><span className="avatar" aria-hidden="true">{member.userName.slice(0, 1).toUpperCase()}</span><span className="member-name">{member.userName}{member.userId === context.userId && <small>you</small>}</span><span className={`member-status ${member.isSubmitted ? "ready" : "waiting"}`}>{member.isSubmitted ? "submitted" : "marking"}</span></div>)}
-              {memberCount > members.length && <p className="member-count-note">{memberCount - members.length} more {memberCount - members.length === 1 ? "member" : "members"} in this room</p>}
-            </div>
+            <div className="member-list">{members.map((member) => <div className="member-row" key={member.userId}><span className="avatar" aria-hidden="true">{member.userName.slice(0, 1).toUpperCase()}</span><span className="member-name">{member.userName}{member.userId === context.userId && <small>you</small>}</span><span className={`member-status ${member.isSubmitted ? "ready" : "waiting"}`}>{member.isSubmitted ? "submitted" : "marking"}</span></div>)}</div>
             <button type="button" className="primary-button wide-button" onClick={() => void submitSchedule()} disabled={submitting || !room}>{submitting ? "Sending your hours…" : currentMember?.isSubmitted ? "Update my schedule" : "Submit my schedule"}</button>
           </section>
-          <section className={`recommendation-card cel-panel ${allSubmitted ? "is-ready" : ""}`}><div className="card-heading"><h2>quietest overlap</h2><span className="sparkle" aria-hidden="true">✦</span></div>{allSubmitted ? <><p className="recommendation-intro">The room found the soft spots. Fewer busy marks means more people can show up.</p>{room?.explanation && <p>{room.explanation}</p>}<div className="recommendation-list">{room?.recommendations.slice(0, 5).map((recommendation) => <div className="recommendation-row" key={recommendation.startsAtUtc}><strong>{formatSlot(recommendation.startsAtUtc, context.timezone)}</strong><span>{recommendation.availableCount} free · {recommendation.busyCount} busy</span></div>)}</div>{!room?.recommendations.length && !room?.explanation && <p>No shared times found yet.</p>}</> : <div className="waiting-state"><span className="orbit-icon" aria-hidden="true">◌</span><p>Waiting for everyone to submit. The good times will bubble up here.</p></div>}</section>
+          <section className={`recommendation-card cel-panel ${allSubmitted ? "is-ready" : ""}`}><div className="card-heading"><h2>quietest overlap</h2><span className="sparkle" aria-hidden="true">✦</span></div>{allSubmitted ? <><p className="recommendation-intro">Recommended time spans in your timezone, with everyone who is free for each one.</p>{room?.explanation && <p>{room.explanation}</p>}<div className="recommendation-list">{room?.timeSpans.map((span) => <div className="recommendation-row" key={span.startsAtUtc}><strong>{formatSpan(span.startsAtUtc, span.endsAtUtc, context.timezone)}</strong><span>{span.availableCount} free · {span.busyCount} busy</span><p className="available-members">Free: {span.availableMembers.length ? span.availableMembers.map((member) => member.userName).join(", ") : "Nobody"}</p></div>)}</div>{!room?.timeSpans.length && !room?.explanation && <p>No shared times found yet.</p>}</> : <div className="waiting-state"><span className="orbit-icon" aria-hidden="true">◌</span><p>Waiting for everyone to submit. The good times will bubble up here.</p></div>}</section>
           {error && <p className="form-error" role="alert">{error}</p>}
         </aside>
       </div>

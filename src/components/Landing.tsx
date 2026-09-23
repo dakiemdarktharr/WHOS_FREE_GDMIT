@@ -3,24 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-
-const participantKey = "whos-free-participant";
-
-type BrowserContext = { userId: string; userName: string; timezone: string };
-
-function browserContext(userName: string): BrowserContext {
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  let userId = "";
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(participantKey) || "{}") as { userId?: string };
-    userId = stored.userId || "";
-  } catch {
-    userId = "";
-  }
-  if (!userId) userId = crypto.randomUUID();
-  window.localStorage.setItem(participantKey, JSON.stringify({ userId, userName, timezone }));
-  return { userId, userName, timezone };
-}
+import { contextForJoin, newRoomContext, saveRoomContext } from "@/lib/room-session";
 
 async function readBody(response: Response) {
   const body = await response.json();
@@ -44,7 +27,7 @@ export function Landing() {
     if (!displayName.trim()) return setError("Add your name so the room knows who you are.");
     setBusy(true);
     try {
-      const context = browserContext(displayName.trim());
+      const context = newRoomContext(displayName.trim());
       const body = await readBody(await fetch("/api/rooms/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -53,7 +36,7 @@ export function Landing() {
       const room = body.room;
       const roomCode = room?.roomCode as string | undefined;
       if (!roomCode || !/^\d{5}$/.test(roomCode)) throw new Error("The server returned an invalid Plan ID.");
-      window.localStorage.setItem(`whos-free-room:${roomCode}`, JSON.stringify({ ...context, roomId: room.roomId ?? "" }));
+      saveRoomContext(roomCode, { ...context, roomId: room.roomId ?? "" });
       router.push(`/room/${roomCode}` as Route);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create a plan.");
@@ -70,13 +53,13 @@ export function Landing() {
     if (!/^\d{5}$/.test(roomCode)) return setError("A Plan ID has exactly five numbers.");
     setBusy(true);
     try {
-      const context = browserContext(displayName.trim());
+      const context = contextForJoin(roomCode, displayName.trim());
       const body = await readBody(await fetch("/api/rooms/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roomCode, userId: context.userId, userName: context.userName, userTimezone: context.timezone }),
       })) as { roomId?: string };
-      window.localStorage.setItem(`whos-free-room:${roomCode}`, JSON.stringify({ ...context, roomId: body.roomId || "" }));
+      saveRoomContext(roomCode, { ...context, roomId: body.roomId || "" });
       router.push(`/room/${roomCode}` as Route);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not join that plan.");

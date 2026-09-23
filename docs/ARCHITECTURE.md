@@ -118,10 +118,10 @@ Socket.io is the live transport for room coordination. MongoDB remains the sourc
 ## Plan lifecycle
 
 1. Creator posts timezone and receives a room code.
-2. Members join with the code and a stable anonymous `userId`.
+2. Members join with the code and a stable anonymous `userId` scoped to their browser tab and room. Choosing a different name in the same tab creates a new participant; another tab never silently reuses the previous tab's identity.
 3. Each member opens the current local month, double-clicks days, and toggles 24 hourly squares between free and busy.
 4. `ESC` closes the inspector without losing the current draft; explicit submit persists the complete schedule.
-5. The room remains `COLLECTING` until all currently joined members submit. The server changes status to `COMPUTING`, calculates results, then changes status to `FINISHED` and broadcasts the result.
+5. The room remains `COLLECTING` until all currently joined members submit. The server changes status to `COMPUTING`, calculates results, then changes status to `FINISHED` and broadcasts the result. A new participant may join a finished room: this clears the previous result and returns the room to `COLLECTING` until the new participant submits.
 6. A member may resubmit. That returns the room to `COMPUTING` and increments `resultVersion`.
 7. Computation runs synchronously inside the submit request; `COMPUTING` is the transient state broadcast between schedule persistence and the `FINISHED` transition. The room document stores `resultVersion` and the latest `result`, so `GET /api/rooms/:roomCode/result` is authoritative after a reconnect without re-running the calculator.
 
@@ -148,7 +148,7 @@ busyCount      = number of members whose normalized busy set contains the slot
 availableCount = submittedMemberCount - busyCount
 ```
 
-Sort ascending by `busyCount`, then ascending by UTC instant. Return the top 12 slots (the top result window size defined in the API contract). If no slot is free for every member, the top slots are the minimum-conflict ones and the result carries an explanation. The UI converts each returned UTC instant into the viewer's local timezone for display. Never calculate by comparing raw local hour integers across timezones.
+Sort ascending by `busyCount`, then ascending by UTC instant. Return the top 12 slots (the top result window size defined in the API contract). The result endpoint projects adjacent recommended one-hour slots with the same available participants into explicit time spans and names every free participant for each span. This projection never exposes raw busy-hour submissions. If no slot is free for every member, the top slots are the minimum-conflict ones and the result carries an explanation. The UI converts each returned UTC instant into the viewer's local timezone for display. Never calculate by comparing raw local hour integers across timezones.
 
 ## Non-negotiable invariants
 
@@ -157,5 +157,5 @@ Sort ascending by `busyCount`, then ascending by UTC instant. Return the top 12 
 - All user-provided timezones must be valid IANA timezone identifiers.
 - REST writes are validated with Zod before persistence.
 - MongoDB is authoritative; Socket.io never stores business state.
-- The room code is a deliberately short human-friendly identifier, not a secret: the REST surface is per-IP rate limited (120/min general, 30/min for room mutations) to raise the cost of code enumeration, `userId` is an anonymous label and never an authentication credential, and a `FINISHED` room only accepts mutations from existing members.
+- The room code is a deliberately short human-friendly identifier, not a secret: the REST surface is per-IP rate limited (120/min general, 30/min for room mutations) to raise the cost of code enumeration, and `userId` is an anonymous label and never an authentication credential. Joining a finished room is allowed so a late participant can contribute; schedule submission still requires membership.
 - `/docs` is the structural ground truth. Any route, event, model, or directory change updates the relevant `/docs` file in the same change.

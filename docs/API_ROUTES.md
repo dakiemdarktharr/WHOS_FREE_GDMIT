@@ -9,12 +9,12 @@ Base URL: the Express server's `/api` prefix. The Next.js web app may proxy thes
 - Content type: `application/json`.
 - Invalid input: `400` with `{ "error": { "code": "VALIDATION_ERROR", "message": string, "fields"?: object } }`.
 - Missing room: `404` with `{ "error": { "code": "ROOM_NOT_FOUND", "message": "Room not found." } }`.
-- Join on a finished room: `409` with `{ "error": { "code": "ROOM_FINISHED", "message": string } }`.
+- A new participant may join a finished room; that transition clears the previous result and resumes collection. A non-member who attempts to submit directly to a finished room receives `409 ROOM_FINISHED`.
 - Schedule submission by a user who has not created or joined the room: `403` with `{ "error": { "code": "NOT_A_MEMBER", "message": string } }`.
 - Rate limited: `429` with `{ "error": { "code": "RATE_LIMITED", "message": string } }`. The `/api` surface allows 120 requests per minute per IP; the room mutations (`create`, `join`, `submit`) allow 30 per minute per IP. The five-digit room code is short by product design, so these limits raise the cost of enumerating codes.
 - Unknown route: `404` with `{ "error": { "code": "NOT_FOUND", "message": string } }`.
 - Server failure: `500` with `{ "error": { "code": "INTERNAL_ERROR", "message": string } }`.
-- `userId` is an anonymous stable browser identifier. It is not an authentication credential.
+- `userId` is an anonymous stable identifier for one participant in one room and browser tab. It is not an authentication credential.
 - `timezone` values must be valid IANA identifiers such as `Asia/Saigon` or `America/Los_Angeles`.
 - The create, join, and result responses include `roomId` (the room's MongoDB ObjectId as a string) so the browser can submit a schedule against the durable room record.
 
@@ -61,7 +61,7 @@ Response `201`:
 
 ## `POST /api/rooms/join`
 
-Validates a room code and joins or refreshes a member.
+Validates a room code and joins or refreshes a member. A new participant joining a `FINISHED` room returns it to `COLLECTING` and invalidates the prior result; existing submissions remain saved.
 
 Request:
 
@@ -121,7 +121,7 @@ Response `202`:
 
 If all members have submitted, the server computes the result and emits `room:state_change` with `FINISHED`. If the room is not ready, it remains `COLLECTING` or `COMPUTING` according to the current operation. Computation is synchronous inside the request: the response `status` is the post-computation state (`FINISHED` when every member has submitted, `COLLECTING` otherwise), and `COMPUTING` is the transient state broadcast between the two.
 
-Submitting to a `FINISHED` room is a resubmission and is allowed only for users who are already members of the room; an unknown user receives `409 ROOM_FINISHED`, mirroring `POST /api/rooms/join`.
+Submitting to a `FINISHED` room is a resubmission and is allowed only for users who are already members of the room; an unknown user receives `409 ROOM_FINISHED` and must join first.
 
 ## `GET /api/rooms/:roomCode/result`
 
@@ -136,6 +136,11 @@ Response `200` while collecting:
   "status": "COLLECTING",
   "memberCount": 3,
   "submittedCount": 2,
+  "members": [
+    { "userId": "sam-id", "userName": "Sam", "isSubmitted": true },
+    { "userId": "alex-id", "userName": "Alex", "isSubmitted": true },
+    { "userId": "pat-id", "userName": "Pat", "isSubmitted": false }
+  ],
   "resultVersion": 0,
   "sharedWindow": null,
   "recommendations": [],
@@ -152,6 +157,11 @@ Response `200` when finished:
   "status": "FINISHED",
   "memberCount": 3,
   "submittedCount": 3,
+  "members": [
+    { "userId": "sam-id", "userName": "Sam", "isSubmitted": true },
+    { "userId": "alex-id", "userName": "Alex", "isSubmitted": true },
+    { "userId": "pat-id", "userName": "Pat", "isSubmitted": true }
+  ],
   "resultVersion": 1,
   "sharedWindow": { "start": "2026-09-24", "end": "2026-09-26" },
   "recommendations": [
@@ -159,6 +169,19 @@ Response `200` when finished:
       "startsAtUtc": "2026-09-25T15:00:00.000Z",
       "busyCount": 0,
       "availableCount": 3
+    }
+  ],
+  "timeSpans": [
+    {
+      "startsAtUtc": "2026-09-25T15:00:00.000Z",
+      "endsAtUtc": "2026-09-25T16:00:00.000Z",
+      "busyCount": 0,
+      "availableCount": 3,
+      "availableMembers": [
+        { "userId": "sam-id", "userName": "Sam" },
+        { "userId": "alex-id", "userName": "Alex" },
+        { "userId": "pat-id", "userName": "Pat" }
+      ]
     }
   ],
   "explanation": null
@@ -171,6 +194,8 @@ Recommendation contract:
 - `sharedWindow` is `null` when the submitted date windows do not intersect.
 - `explanation` is `null` normally; it carries a short message when the result needs context, e.g. an empty intersection or a least-conflict fallback because no slot works for every member.
 - `startsAtUtc` is a UTC instant; the UI converts it into the viewer's local timezone for display.
+- `members` is the authoritative participant roster, ordered by join time. It includes names and submission state, but no raw busy hours.
+- `timeSpans` coalesces adjacent recommended one-hour slots only when the same participants are available. Each span has an exclusive `endsAtUtc` and lists every available member by name. The spans are ranked by fewest conflicts, then longest duration, then earliest start. `timeSpans` is empty until the room is `FINISHED`.
 
 ## Socket.io namespace and events
 
