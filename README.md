@@ -13,7 +13,7 @@ Who's free, gdmit helps a group find the quietest time to meet. Everyone marks t
 1. Install dependencies with `npm install` and `npm install --prefix apps/server`.
 2. Copy `.env.example` to `.env.local`.
 3. Set `MONGODB_URI` and `MONGODB_DB`. Set `API_BASE_URL` and `NEXT_PUBLIC_API_URL` to the reachable Express server (for example `http://localhost:4000`). The old `/api/v1/plans` routes also require `ABLY_API_KEY` if used.
-4. Start the API with `npm run dev --prefix apps/server`, then start the web app with `npm run dev` in another terminal.
+4. Start the API with `npm run dev --prefix apps/server`, then start the web app with `npm run dev` in another terminal. On Windows, if Node.js cannot resolve the MongoDB Atlas SRV record, run `pwsh -File scripts/start-phase1-api.ps1` to resolve the same public seed list through Windows DNS and start the API without changing credentials.
 
 Useful checks:
 
