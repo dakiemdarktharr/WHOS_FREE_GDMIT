@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { contextForJoin, newRoomContext, saveRoomContext } from "@/lib/room-session";
@@ -18,7 +18,6 @@ export function Landing() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [timezone, setTimezone] = useState("detecting your timezone…");
-  const titleRef = useRef<HTMLDivElement>(null);
   const [launchVisible, setLaunchVisible] = useState(false);
 
   useEffect(() => setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"), []);
@@ -32,38 +31,6 @@ export function Landing() {
     );
     observer.observe(launchSection);
     return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let frame = 0;
-    const reset = () => {
-      cancelAnimationFrame(frame);
-      titleRef.current?.style.setProperty("--tilt-x", "0deg");
-      titleRef.current?.style.setProperty("--tilt-y", "0deg");
-    };
-    const move = (event: globalThis.PointerEvent) => {
-      if (motion.matches || event.pointerType === "touch") return;
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const stage = titleRef.current;
-        if (!stage) return;
-        const bounds = stage.getBoundingClientRect();
-        const x = Math.max(-1, Math.min(1, (event.clientX - bounds.left - bounds.width / 2) / (bounds.width / 2)));
-        const y = Math.max(-1, Math.min(1, (event.clientY - bounds.top - bounds.height / 2) / (bounds.height / 2)));
-        stage.style.setProperty("--tilt-x", `${x * 8}deg`);
-        stage.style.setProperty("--tilt-y", `${-y * 8}deg`);
-      });
-    };
-    window.addEventListener("pointermove", move);
-    document.documentElement.addEventListener("pointerleave", reset);
-    motion.addEventListener("change", reset);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("pointermove", move);
-      document.documentElement.removeEventListener("pointerleave", reset);
-      motion.removeEventListener("change", reset);
-    };
   }, []);
 
   async function createRoom(event: FormEvent) {
@@ -117,13 +84,11 @@ export function Landing() {
     <main className="landing-shell">
       <section className="landing-hero" aria-labelledby="hero-title">
         <div className="landing-copy hero-copy">
-          <div className="hero-title-stage" ref={titleRef}>
-            <h1 id="hero-title" className="hero-title">
+          <div className="hero-title-stage">
+            <h1 id="hero-title" className="hero-title" aria-label="WHO'S FREE GODAMITTTT!">
               <span className="chrome-word" data-text="WHO'S FREE">WHO&apos;S FREE</span>
-              <span className="chrome-word" data-text="GODAMMITTTT?">GODAMMITTTT?</span>
+              <span className="chrome-word" data-text="GODAMITTTT!">GODAMITTTT!</span>
             </h1>
-            <span className="chrome-star star-one" aria-hidden="true">✦</span>
-            <span className="chrome-star star-two" aria-hidden="true">✦</span>
           </div>
         </div>
         <a className="scroll-cue" href="#start">Make it happen <span className="scroll-cue-arrow" aria-hidden="true">↓</span></a>

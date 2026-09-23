@@ -1,0 +1,23 @@
+{
+  "id": "FE-CHROME-WAVES-01",
+  "status": "implemented",
+  "groundTruth": "docs/ARCHITECTURE.md",
+  "runtime": "client-only Three.js, dynamically loaded by ChromeWorld",
+  "files": {
+    "mount": "src/app/layout.tsx",
+    "lifecycle": "src/components/ChromeWorld.tsx",
+    "renderer": "src/lib/chrome-scene.ts",
+    "styles": "src/app/chrome.css",
+    "title": "public/models/whos-free-solid-chrome.glb",
+    "textures": "public/textures/waves/reference-{1..7}.png"
+  },
+  "titleText": "WHO'S FREE GODAMITTTT!",
+  "titleWidthFraction": 0.8,
+  "pointerOrigin": "projected center of complete title",
+  "background": "viewport-fixed, spatial wave-driven seven-design flow",
+  "fallback": "static texture and accessible CSS heading",
+  "reducedMotion": "static frame; no pointer tilt",
+  "apiChanges": [],
+  "databaseChanges": [],
+  "preserve": ["room creation and join", "calendar and hour editor", "busy-hour lock feedback", "50% calendar glint", "timezone calculations", "real-time room state"]
+}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { ChromeWorld } from "@/components/ChromeWorld";
 import "./globals.css";
 import "./chrome.css";
 
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en" className={`${displayFont.variable} ${interfaceFont.variable}`}><body>
     <div className="holographic-backdrop" aria-hidden="true"><div className="holographic-light" /><div className="holographic-grain" /></div>
+    <ChromeWorld />
     {children}
   </body></html>;
 }
