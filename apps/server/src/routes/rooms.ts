@@ -3,11 +3,13 @@ import { asyncHandler, validateBody } from "../middleware/validate.js";
 import { createRoomSchema, joinRoomSchema, roomCodeSchema } from "../lib/validation.js";
 import { createRoom, getRoomResult, joinRoom } from "../services/roomService.js";
 import { AppError } from "../middleware/error.js";
+import { roomMutationRateLimiter } from "../middleware/rateLimit.js";
 
 const router = Router();
 
 router.post(
   "/create",
+  roomMutationRateLimiter,
   validateBody(createRoomSchema),
   asyncHandler(async (req, res) => {
     const result = await createRoom(req.body);
@@ -17,6 +19,7 @@ router.post(
 
 router.post(
   "/join",
+  roomMutationRateLimiter,
   validateBody(joinRoomSchema),
   asyncHandler(async (req, res) => {
     const result = await joinRoom(req.body);

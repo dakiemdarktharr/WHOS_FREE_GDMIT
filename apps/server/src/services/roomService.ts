@@ -198,6 +198,21 @@ export async function submitSchedule(input: {
     );
   }
 
+  // Mirror joinRoom's lifecycle guard: a FINISHED room only accepts
+  // resubmissions from existing members. The upsert below must not let a
+  // stranger self-register into a closed room. (Every member of a FINISHED
+  // room is submitted by invariant, so a plain existence check suffices.)
+  if (room.status === "FINISHED") {
+    const membership = await Schedule.exists({ roomId: room._id, userId: input.userId });
+    if (!membership) {
+      throw new AppError(
+        409,
+        "ROOM_FINISHED",
+        "This room has already finished collecting schedules.",
+      );
+    }
+  }
+
   const busySlots = normalizeBusySlots(input.busySlots);
 
   const finalized = await mongoose.connection.transaction(async (session) => {

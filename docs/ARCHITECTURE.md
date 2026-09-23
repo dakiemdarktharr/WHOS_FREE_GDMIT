@@ -154,4 +154,5 @@ Sort ascending by `busyCount`, then ascending by UTC instant. Return the top 12 
 - All user-provided timezones must be valid IANA timezone identifiers.
 - REST writes are validated with Zod before persistence.
 - MongoDB is authoritative; Socket.io never stores business state.
+- The room code is a deliberately short human-friendly identifier, not a secret: the REST surface is per-IP rate limited (120/min general, 30/min for room mutations) to raise the cost of code enumeration, `userId` is an anonymous label and never an authentication credential, and a `FINISHED` room only accepts mutations from existing members.
 - `/docs` is the structural ground truth. Any route, event, model, or directory change updates the relevant `/docs` file in the same change.

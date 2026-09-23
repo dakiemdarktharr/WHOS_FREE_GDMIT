@@ -10,6 +10,7 @@ Base URL: the Express server's `/api` prefix. The Next.js web app may proxy thes
 - Invalid input: `400` with `{ "error": { "code": "VALIDATION_ERROR", "message": string, "fields"?: object } }`.
 - Missing room: `404` with `{ "error": { "code": "ROOM_NOT_FOUND", "message": "Room not found." } }`.
 - Join on a finished room: `409` with `{ "error": { "code": "ROOM_FINISHED", "message": string } }`.
+- Rate limited: `429` with `{ "error": { "code": "RATE_LIMITED", "message": string } }`. The `/api` surface allows 120 requests per minute per IP; the room mutations (`create`, `join`, `submit`) allow 30 per minute per IP. The five-digit room code is short by product design, so these limits raise the cost of enumerating codes.
 - Unknown route: `404` with `{ "error": { "code": "NOT_FOUND", "message": string } }`.
 - Server failure: `500` with `{ "error": { "code": "INTERNAL_ERROR", "message": string } }`.
 - `userId` is an anonymous stable browser identifier. It is not an authentication credential.
@@ -117,6 +118,8 @@ Response `202`:
 ```
 
 If all members have submitted, the server computes the result and emits `room:state_change` with `FINISHED`. If the room is not ready, it remains `COLLECTING` or `COMPUTING` according to the current operation. Computation is synchronous inside the request: the response `status` is the post-computation state (`FINISHED` when every member has submitted, `COLLECTING` otherwise), and `COMPUTING` is the transient state broadcast between the two.
+
+Submitting to a `FINISHED` room is a resubmission and is allowed only for users who are already members of the room; an unknown user receives `409 ROOM_FINISHED`, mirroring `POST /api/rooms/join`.
 
 ## `GET /api/rooms/:roomCode/result`
 

@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import { corsOrigins } from "./config/env.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
+import { apiRateLimiter } from "./middleware/rateLimit.js";
 import healthRouter from "./routes/health.js";
 import roomsRouter from "./routes/rooms.js";
 import schedulesRouter from "./routes/schedules.js";
@@ -14,6 +15,7 @@ export function createApp(): Express {
   app.use(express.json({ limit: "256kb" }));
 
   app.use("/health", healthRouter);
+  app.use("/api", apiRateLimiter);
   app.use("/api/rooms", roomsRouter);
   app.use("/api/schedules", schedulesRouter);
 
