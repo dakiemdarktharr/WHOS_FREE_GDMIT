@@ -1,0 +1,14 @@
+# Who's free, gdmit architecture
+
+> Raw: [../raw/product-requirements.md](../raw/product-requirements.md)
+> Fingerprint: git:working-tree
+> Monitored: documentation/api-contract.json, src/app/api, src/domain, src/lib, src/components, src/app/globals.css
+> Status: Current
+
+The app uses a Next.js App Router frontend and backend-for-frontend API route handlers. The API contract is the JSON file at [../../api-contract.json](../../api-contract.json), and route files are checked against it by `scripts/check-architecture.mjs`.
+
+MongoDB stores plans, members, and normalized UTC busy slots. The browser captures its IANA timezone and uses local calendar dates for editing. An Ably channel named `plan:{code}` broadcasts presence and availability events so every open room can update without polling.
+
+The schedule begins at the current month. A member saves each day they want considered. The first and last saved day define their planning window; any saved day with zero busy hours is treated as fully free. The recommendation engine uses the overlap of all member windows and sorts hourly slots by the number of members who marked that UTC hour busy.
+
+The visual system is a dark-indigo sky with neon aqua and lemon surfaces, sharp cel-shaded outlines, and floating paper-like panels. Memphis shapes are sparse and purposeful: they mark the plan state and the recommendation moment without competing with the calendar.

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractVersion": "1.0.0",
+  "groundTruth": "documentation/api-contract.json",
+  "realtime": {
+    "provider": "ably",
+    "channel": "plan:{code}",
+    "events": ["presence.joined", "presence.left", "availability.updated", "plan.confirmed", "recommendations.ready"]
+  },
+  "resources": {
+    "plans": {
+      "create": {
+        "method": "POST",
+        "path": "/api/v1/plans",
+        "request": {
+          "displayName": "string, 1-40 characters",
+          "timezone": "IANA timezone"
+        },
+        "response": "PlanRoom"
+      },
+      "read": {
+        "method": "GET",
+        "path": "/api/v1/plans/{code}",
+        "response": "PlanRoom"
+      },
+      "confirm": {
+        "method": "PATCH",
+        "path": "/api/v1/plans/{code}",
+        "request": { "participantId": "stable browser-generated id", "status": "confirmed" },
+        "response": "PlanRoom"
+      }
+    },
+    "members": {
+      "join": {
+        "method": "POST",
+        "path": "/api/v1/plans/{code}/members",
+        "request": {
+          "displayName": "string, 1-40 characters",
+          "timezone": "IANA timezone",
+          "participantId": "stable browser-generated id"
+        },
+        "response": "PlanRoom"
+      }
+    },
+    "availability": {
+      "read": {
+        "method": "GET",
+        "path": "/api/v1/plans/{code}/availability",
+        "query": { "participantId": "stable browser-generated id" },
+        "response": "AvailabilityUpdate[]"
+      },
+      "replace": {
+        "method": "PUT",
+        "path": "/api/v1/plans/{code}/availability",
+        "request": {
+          "participantId": "stable browser-generated id",
+          "timezone": "IANA timezone",
+          "date": "local calendar date YYYY-MM-DD",
+          "busyHours": "array of integers 0-23",
+          "windowStart": "local calendar date YYYY-MM-DD",
+          "windowEnd": "local calendar date YYYY-MM-DD"
+        },
+        "response": "AvailabilityUpdate"
+      }
+    },
+    "realtimeToken": {
+      "issue": {
+        "method": "POST",
+        "path": "/api/v1/plans/{code}/realtime-token",
+        "request": { "participantId": "stable browser-generated id" },
+        "response": "Ably TokenRequest"
+      }
+    }
+  },
+  "domainRules": {
+    "code": "Five uppercase characters from a non-ambiguous alphabet.",
+    "timezone": "Browser timezone is captured with Intl.DateTimeFormat().resolvedOptions().timeZone.",
+    "storage": "Busy hour selections are normalized to UTC instants before persistence.",
+    "sharedWindow": "Candidate slots are restricted to the intersection of every submitted member window.",
+    "ranking": "Recommendations sort by ascending busy-member count, then by UTC time.",
+    "fullyFreeDay": "A saved day with zero busy hours is a valid fully-free day.",
+    "windowInference": "A member's window is the first and last saved day; unsaved days between them remain fully free."
+  }
+}
