@@ -121,6 +121,7 @@ input::placeholder { color: #9a98b5; }
 .hour-cell.is-busy { color: #fff; background: var(--coral); box-shadow: 4px 4px 0 var(--ink); transform: translate(-2px, -2px); }
 .hour-cell span { font-size: 18px; font-weight: 900; }
 .hour-cell small { font-size: 11px; font-weight: 900; }
+.hour-cell b { font-size: 9px; letter-spacing: .03em; text-transform: uppercase; }
 .editor-actions { align-items: center; margin-top: 30px; color: var(--ink-soft); }
 .editor-actions .primary-button { width: auto; margin-top: 0; }
 
@@ -151,3 +152,39 @@ input::placeholder { color: #9a98b5; }
   .editor-actions .primary-button { width: 100%; margin-top: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+
+/* Aero gloss, playful float, and the full-width 24-hour strip. */
+:root { --ink: #111027; --aqua: #24e8d0; --lime: #d7fa58; }
+.cel-panel { position: relative; isolation: isolate; }
+.cel-panel::before { content: ""; position: absolute; z-index: -1; inset: 0 0 auto; height: 42%; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.68), rgba(255,255,255,0)); }
+.brand-chip, .panel-tab, .room-code, .editor-count { animation: buoy 5s ease-in-out infinite; }
+.dot-one { animation: buoy 6s ease-in-out infinite; }
+.dot-two { animation: buoy 5.3s ease-in-out -1.2s infinite; }
+.day-tile.has-data { color: #21123e; background: linear-gradient(145deg, #d9ff72 0%, #8ff1df 60%, #66dff2 100%); box-shadow: inset 0 4px 0 rgba(255,255,255,.75), 3px 3px 0 var(--ink); }
+.day-tile.has-data.today { background: linear-gradient(145deg, #faffb2 0%, #d7fa58 100%); }
+.day-mark { color: #16113a; }
+.calendar-spacer { min-height: 1px; }
+.hour-grid-scroll { overflow-x: auto; padding: 3px 3px 12px; scrollbar-color: var(--aqua-dark) rgba(20,18,50,.12); }
+.hour-grid { display: grid; grid-template-columns: repeat(24, minmax(40px, 1fr)); gap: 7px; min-width: 1050px; }
+.hour-cell { min-height: 122px; align-items: center; text-align: center; padding: 10px 5px; background: linear-gradient(160deg, #fff 0%, #eafcff 100%); box-shadow: inset 0 4px 0 rgba(255,255,255,.9); }
+.hour-cell.is-busy { color: var(--ink); background: linear-gradient(150deg, #e7ff6e, #4de6ca); box-shadow: inset 0 4px 0 rgba(255,255,255,.6), 3px 3px 0 var(--ink); }
+.hour-cell:hover { transform: translateY(-3px); }
+.editor-panel { width: min(100%, 1450px); }
+.editor-heading { margin-top: 40px; }
+.month-grid .day-tile { min-width: 0; }
+button, input, .cel-panel { border-radius: 4px; }
+.primary-button, .secondary-button { border-radius: 5px; }
+.launch-panel { backdrop-filter: blur(12px); background: rgba(255,253,242,.93); }
+.landing-shell { background: radial-gradient(ellipse at 77% 10%, rgba(255,255,255,.82), transparent 25%), radial-gradient(ellipse at 12% 88%, rgba(215,250,88,.48), transparent 26%), linear-gradient(138deg, #83e7fa 0%, #c4fbff 44%, #89f3dc 100%); }
+.recommendation-card { background: linear-gradient(150deg, #eee7ff 0%, #d9f7ff 100%); }
+.recommendation-card.is-ready { background: linear-gradient(145deg, #baffea 0%, #d7fa58 100%); }
+.member-count-note { margin: 0; color: var(--ink-soft); font-size: 12px; font-weight: 800; }
+
+@keyframes buoy { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+
+@media (max-width: 620px) {
+  .hour-grid { min-width: 1050px; grid-template-columns: repeat(24, 40px); }
+  .editor-heading { margin-top: 34px; }
+  .hour-cell { min-height: 112px; }
+  .editor-actions .primary-button { width: 100%; margin-top: 18px; }
+}

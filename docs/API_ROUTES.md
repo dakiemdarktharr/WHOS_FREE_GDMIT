@@ -12,6 +12,7 @@ Base URL: the Express server's `/api` prefix. The Next.js web app may proxy thes
 - Server failure: `500` with `{ "error": { "code": "INTERNAL_ERROR", "message": string } }`.
 - `userId` is an anonymous stable browser identifier. It is not an authentication credential.
 - `timezone` values must be valid IANA identifiers such as `Asia/Saigon` or `America/Los_Angeles`.
+- The create, join, and result responses include `roomId` so the browser can submit a schedule against the durable room record.
 
 ## `POST /api/rooms/create`
 
@@ -32,6 +33,7 @@ Response `201`:
 ```json
 {
   "room": {
+    "roomId": "66f0d31f37fa2b2f1d012345",
     "roomCode": "48307",
     "creatorTimezone": "Asia/Saigon",
     "status": "COLLECTING",
@@ -60,6 +62,7 @@ Response `200`:
 
 ```json
 {
+  "roomId": "66f0d31f37fa2b2f1d012345",
   "roomCode": "48307",
   "status": "COLLECTING",
   "memberCount": 2,
@@ -109,6 +112,7 @@ Response `200` while collecting:
 
 ```json
 {
+  "roomId": "66f0d31f37fa2b2f1d012345",
   "roomCode": "48307",
   "status": "COLLECTING",
   "memberCount": 3,
@@ -123,6 +127,7 @@ Response `200` when finished:
 
 ```json
 {
+  "roomId": "66f0d31f37fa2b2f1d012345",
   "roomCode": "48307",
   "status": "FINISHED",
   "memberCount": 3,

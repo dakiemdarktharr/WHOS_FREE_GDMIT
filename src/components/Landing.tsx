@@ -2,14 +2,30 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Route } from "next";
 
 const participantKey = "whos-free-participant";
 
-function browserContext() {
+type BrowserContext = { userId: string; userName: string; timezone: string };
+
+function browserContext(userName: string): BrowserContext {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const existing = window.localStorage.getItem(participantKey);
-  const participantId = existing ? JSON.parse(existing).participantId : crypto.randomUUID();
-  return { timezone, participantId };
+  let userId = "";
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(participantKey) || "{}") as { userId?: string };
+    userId = stored.userId || "";
+  } catch {
+    userId = "";
+  }
+  if (!userId) userId = crypto.randomUUID();
+  window.localStorage.setItem(participantKey, JSON.stringify({ userId, userName, timezone }));
+  return { userId, userName, timezone };
+}
+
+async function readBody(response: Response) {
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message || "The room could not be reached. Try again.");
+  return body;
 }
 
 export function Landing() {
@@ -20,31 +36,25 @@ export function Landing() {
   const [busy, setBusy] = useState(false);
   const [timezone, setTimezone] = useState("detecting your timezone…");
 
-  useEffect(() => {
-    setTimezone(browserContext().timezone);
-  }, []);
+  useEffect(() => setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"), []);
 
-  function storeParticipant(name: string) {
-    const context = browserContext();
-    window.localStorage.setItem(participantKey, JSON.stringify({ ...context, displayName: name }));
-    return context;
-  }
-
-  async function createPlan(event: FormEvent) {
+  async function createRoom(event: FormEvent) {
     event.preventDefault();
     setError("");
     if (!displayName.trim()) return setError("Add your name so the room knows who you are.");
     setBusy(true);
     try {
-      const context = storeParticipant(displayName.trim());
-      const response = await fetch("/api/v1/plans", {
+      const context = browserContext(displayName.trim());
+      const body = await readBody(await fetch("/api/rooms/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName: displayName.trim(), ...context }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message || "Could not create a plan.");
-      router.push(`/plan/${body.code}`);
+        body: JSON.stringify({ userId: context.userId, userName: context.userName, creatorTimezone: context.timezone }),
+      }));
+      const room = body.room;
+      const roomCode = room?.roomCode as string | undefined;
+      if (!roomCode || !/^\d{5}$/.test(roomCode)) throw new Error("The server returned an invalid Plan ID.");
+      window.localStorage.setItem(`whos-free-room:${roomCode}`, JSON.stringify({ ...context, roomId: room._id ?? room.id ?? body.roomId ?? "" }));
+      router.push(`/room/${roomCode}` as Route);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create a plan.");
     } finally {
@@ -52,23 +62,22 @@ export function Landing() {
     }
   }
 
-  async function joinPlan(event: FormEvent) {
+  async function joinRoom(event: FormEvent) {
     event.preventDefault();
     setError("");
-    const code = planCode.trim().toUpperCase();
+    const roomCode = planCode.trim();
     if (!displayName.trim()) return setError("Add your name so the room knows who you are.");
-    if (code.length !== 5) return setError("A plan ID has five characters.");
+    if (!/^\d{5}$/.test(roomCode)) return setError("A Plan ID has exactly five numbers.");
     setBusy(true);
     try {
-      const context = storeParticipant(displayName.trim());
-      const response = await fetch(`/api/v1/plans/${code}/members`, {
+      const context = browserContext(displayName.trim());
+      const body = await readBody(await fetch("/api/rooms/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName: displayName.trim(), ...context }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message || "Could not join that plan.");
-      router.push(`/plan/${code}`);
+        body: JSON.stringify({ roomCode, userId: context.userId, userName: context.userName, userTimezone: context.timezone }),
+      })) as { roomId?: string };
+      window.localStorage.setItem(`whos-free-room:${roomCode}`, JSON.stringify({ ...context, roomId: body.roomId || "" }));
+      router.push(`/room/${roomCode}` as Route);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not join that plan.");
     } finally {
@@ -78,24 +87,24 @@ export function Landing() {
 
   return (
     <main className="landing-shell">
-      <div className="memphis-dot dot-one" /><div className="memphis-dot dot-two" />
+      <div className="memphis-dot dot-one" aria-hidden="true" /><div className="memphis-dot dot-two" aria-hidden="true" />
       <section className="landing-copy">
-        <div className="brand-chip"><span className="brand-spark">✦</span> group timing, without the group chat spiral</div>
+        <div className="brand-chip"><span className="brand-spark" aria-hidden="true">✦</span> group timing, without the group chat spiral</div>
         <h1>Find the golden hour <em>together.</em></h1>
         <p className="lede">Everybody marks when they’re busy. The room finds the quietest overlap, even when your crew is spread across time zones.</p>
-        <div className="timezone-pill"><span className="status-light" /> Your clock: {timezone}</div>
+        <div className="timezone-pill"><span className="status-light" aria-hidden="true" /> Your clock: {timezone}</div>
       </section>
-      <section className="launch-panel cel-panel">
+      <section className="launch-panel cel-panel" aria-label="Create or join a room">
         <div className="panel-tab">start a room</div>
-        <form onSubmit={createPlan}>
+        <form onSubmit={createRoom}>
           <label htmlFor="display-name">Your name</label>
-          <input id="display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="e.g. Sam, snack captain" maxLength={40} />
+          <input id="display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="e.g. Sam, snack captain" maxLength={40} autoComplete="name" required />
           <button className="primary-button" disabled={busy}>{busy ? "Warming up the room…" : "Making a legit plan.."}</button>
         </form>
         <div className="join-divider"><span>or join a plan</span></div>
-        <form onSubmit={joinPlan} className="join-form">
+        <form onSubmit={joinRoom} className="join-form">
           <label htmlFor="plan-id">Plan ID num</label>
-          <div className="join-row"><input id="plan-id" value={planCode} onChange={(event) => setPlanCode(event.target.value.toUpperCase())} placeholder="5FJ8Q" maxLength={5} /><button className="secondary-button" disabled={busy}>Join</button></div>
+          <div className="join-row"><input id="plan-id" inputMode="numeric" pattern="[0-9]{5}" value={planCode} onChange={(event) => setPlanCode(event.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="48307" maxLength={5} autoComplete="one-time-code" required /><button className="secondary-button" disabled={busy}>Join</button></div>
         </form>
         {error && <p className="form-error" role="alert">{error}</p>}
       </section>
