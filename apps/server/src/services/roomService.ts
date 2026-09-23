@@ -6,6 +6,7 @@ import { generateUniqueRoomCode } from "../lib/roomCode.js";
 import { normalizeBusySlots } from "../lib/validation.js";
 import { calculateScheduleResult } from "./scheduleCalculator.js";
 import { broadcastToRoom } from "../socket/index.js";
+import { supportsTransactions } from "../db/connect.js";
 import type {
   BusyDay,
   CalculationResult,
@@ -173,11 +174,12 @@ interface FinalizedResult {
 /**
  * Atomically replace the caller's schedule and mark it submitted.
  *
- * Runs inside a transaction when MongoDB supports one (Atlas / replica
- * set). On a standalone local MongoDB, `mongoose.connection.transaction`
- * invokes the callback with a null session: the writes stay idempotent and
- * the result is recomputed from a fresh read before FINISHED is broadcast,
- * per docs/DATABASE_SCHEMA.md.
+ * The guard-and-write unit runs inside a transaction when the topology
+ * supports one (Atlas / replica set / sharded). On a standalone local
+ * MongoDB — where `mongoose.connection.transaction` would fail outright —
+ * the same unit runs sequentially with idempotent writes and the result is
+ * recomputed from a fresh read before FINISHED is broadcast, per
+ * docs/DATABASE_SCHEMA.md.
  */
 export async function submitSchedule(input: {
   roomCode: string;
@@ -198,10 +200,8 @@ export async function submitSchedule(input: {
     );
   }
 
-  // Mirror joinRoom's lifecycle guard: a FINISHED room only accepts
-  // resubmissions from existing members. The upsert below must not let a
-  // stranger self-register into a closed room. (Every member of a FINISHED
-  // room is submitted by invariant, so a plain existence check suffices.)
+  // Fast-path rejection for the common case (see the in-unit re-check below
+  // for the race-safe guard).
   if (room.status === "FINISHED") {
     const membership = await Schedule.exists({ roomId: room._id, userId: input.userId });
     if (!membership) {
@@ -215,8 +215,30 @@ export async function submitSchedule(input: {
 
   const busySlots = normalizeBusySlots(input.busySlots);
 
-  const finalized = await mongoose.connection.transaction(async (session) => {
+  // The membership guard and the writes run as one unit: a real transaction
+  // when the topology supports one, otherwise sequential idempotent writes
+  // with a fresh read before FINISHED (docs/DATABASE_SCHEMA.md fallback).
+  const run = async (session: mongoose.ClientSession | null) => {
     const options = session ? { session } : {};
+
+    // Re-checked inside the unit so a room finishing concurrently cannot
+    // be raced into accepting a stranger's upsert. (Every member of a
+    // FINISHED room is submitted by invariant, so existence suffices.)
+    const freshRoom = await Room.findOne({ _id: room._id }, null, options);
+    if (freshRoom?.status === "FINISHED") {
+      const membershipCount = await Schedule.countDocuments(
+        { roomId: room._id, userId: input.userId },
+        options,
+      );
+      if (membershipCount === 0) {
+        throw new AppError(
+          409,
+          "ROOM_FINISHED",
+          "This room has already finished collecting schedules.",
+        );
+      }
+    }
+
     await Schedule.findOneAndUpdate(
       { roomId: room._id, userId: input.userId },
       {
@@ -265,7 +287,11 @@ export async function submitSchedule(input: {
       submittedCount,
       finalized: { resultVersion: updated.resultVersion, result },
     };
-  });
+  };
+
+  const finalized = (await supportsTransactions())
+    ? await mongoose.connection.transaction(run)
+    : await run(null);
 
   if (!finalized) {
     throw new AppError(500, "INTERNAL_ERROR", "Schedule submission failed.");

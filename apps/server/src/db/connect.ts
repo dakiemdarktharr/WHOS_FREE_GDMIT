@@ -16,6 +16,26 @@ export async function disconnectFromDatabase(): Promise<void> {
   await mongoose.disconnect();
 }
 
+let transactionsSupported: boolean | null = null;
+
+/**
+ * Detect whether the connected topology can run multi-document transactions:
+ * replica sets (`hello.setName`) and sharded clusters (`msg: "isdbgrid"`)
+ * support them, standalone servers do not. Cached after the first check.
+ *
+ * mongoose 8's `connection.transaction()` always runs a real transaction
+ * and fails against standalone servers, so the submit service falls back
+ * to sequential idempotent writes when this returns false, per
+ * docs/DATABASE_SCHEMA.md.
+ */
+export async function supportsTransactions(): Promise<boolean> {
+  if (transactionsSupported !== null) return transactionsSupported;
+  if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) return false;
+  const hello = await mongoose.connection.db.admin().command({ hello: 1 });
+  transactionsSupported = typeof hello.setName === "string" || hello.msg === "isdbgrid";
+  return transactionsSupported;
+}
+
 export function databaseState(): "connected" | "connecting" | "disconnected" {
   switch (mongoose.connection.readyState) {
     case 1:
