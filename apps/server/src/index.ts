@@ -1,5 +1,5 @@
 import { createServer, type Server as HttpServer } from "node:http";
-import { createApp } from "./app.js";
+import app from "./app.js";
 import { env } from "./config/env.js";
 import { connectToDatabase, disconnectFromDatabase } from "./db/connect.js";
 import { closeSocketServer, initSocketServer } from "./socket/index.js";
@@ -9,7 +9,6 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 async function main(): Promise<void> {
   await connectToDatabase(env.MONGODB_URI, env.MONGODB_DB);
 
-  const app = createApp();
   const server: HttpServer = createServer(app);
   initSocketServer(server);
 

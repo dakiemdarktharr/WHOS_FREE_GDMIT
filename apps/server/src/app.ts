@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import cors from "cors";
-import { corsOrigins } from "./config/env.js";
+import { corsOrigins, env } from "./config/env.js";
+import { connectToDatabase } from "./db/connect.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import { apiRateLimiter } from "./middleware/rateLimit.js";
 import healthRouter from "./routes/health.js";
@@ -16,6 +17,14 @@ export function createApp(): Express {
 
   app.use("/health", healthRouter);
   app.use("/api", apiRateLimiter);
+  app.use("/api", async (_req, _res, next) => {
+    try {
+      await connectToDatabase(env.MONGODB_URI, env.MONGODB_DB);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
   app.use("/api/rooms", roomsRouter);
   app.use("/api/schedules", schedulesRouter);
 
@@ -23,3 +32,5 @@ export function createApp(): Express {
   app.use(errorHandler);
   return app;
 }
+
+export default createApp();

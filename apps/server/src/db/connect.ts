@@ -1,19 +1,29 @@
 import mongoose from "mongoose";
 
+let connectionPromise: Promise<void> | null = null;
+
 /**
  * Connect to MongoDB. Connection failures reject so the bootstrapping
  * process can exit with a clear message instead of serving half-initialized.
  */
-export async function connectToDatabase(uri: string, dbName: string): Promise<void> {
+export function connectToDatabase(uri: string, dbName: string): Promise<void> {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+  if (connectionPromise) return connectionPromise;
   mongoose.set("strictQuery", true);
-  await mongoose.connect(uri, {
+  connectionPromise = mongoose.connect(uri, {
     dbName,
     serverSelectionTimeoutMS: 10_000,
+  }).then(() => undefined).catch((error: unknown) => {
+    connectionPromise = null;
+    throw error;
   });
+  return connectionPromise;
 }
 
 export async function disconnectFromDatabase(): Promise<void> {
   await mongoose.disconnect();
+  connectionPromise = null;
+  transactionsSupported = null;
 }
 
 let transactionsSupported: boolean | null = null;

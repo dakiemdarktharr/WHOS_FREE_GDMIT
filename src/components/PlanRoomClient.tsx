@@ -120,7 +120,10 @@ export function PlanRoomClient({ code }: { code: string }) {
       setStatus("Live updates connected");
       socket.emit("room:join", { roomCode: code, userId: context.userId, userName: context.userName });
     });
-    socket.on("connect_error", () => setStatus("Reconnecting…"));
+    socket.on("connect_error", () => {
+      setStatus("Checking for updates…");
+      socket.disconnect();
+    });
     socket.on("room:joined", () => void loadRoom());
     socket.on("room:join_error", (failure: { message?: string }) => {
       setError(failure.message || "Could not join live updates.");
@@ -136,6 +139,11 @@ export function PlanRoomClient({ code }: { code: string }) {
     socket.on("room:state_change", () => void loadRoom());
     return () => { socket.disconnect(); };
   }, [code, context.userId, context.userName, loadRoom]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadRoom(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [loadRoom]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

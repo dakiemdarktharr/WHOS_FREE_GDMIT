@@ -30,4 +30,4 @@ The current room contract lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md
 
 ## Deployment
 
-Deploy the Express/Socket.io server to a Node host with MongoDB access, then deploy the Next.js app to Vercel. Set `API_BASE_URL` and `NEXT_PUBLIC_API_URL` to that server's public HTTPS origin in the Vercel project settings. `NEXT_PUBLIC_API_URL` is embedded in the client build, and the server's `CORS_ORIGIN` must include the Vercel origin. The Next.js deployment alone does not host the Express or Socket.io server.
+Deploy `apps/server` as a separate Vercel Express project with `MONGODB_URI` and `MONGODB_DB` configured in its environment. Set the Next.js project's `API_BASE_URL` to the Express project's public HTTPS origin and redeploy the web project. A persistent Node host can also run the Express/Socket.io server; set `NEXT_PUBLIC_API_URL` to that host for live Socket.io updates. The browser polls the room result every five seconds when Socket.io is unavailable, including on Vercel functions. The Next.js deployment alone does not host the Express API.

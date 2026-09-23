@@ -101,6 +101,8 @@ The canonical paths and payloads are defined in [API_ROUTES.md](./API_ROUTES.md)
 
 The web app may proxy these paths through Next.js rewrites so the browser uses one origin. The Express server remains the owner of REST behavior and Socket.io state.
 
+For Vercel deployment, deploy `apps/server` as a separate Express project. Its function establishes the MongoDB connection before handling `/api` requests; `/health` reports connection state without querying MongoDB. Set the web project's `API_BASE_URL` to the public origin of that Express project. A Vercel function cannot guarantee that every Socket.io connection and event reaches the same running instance, so the browser also refreshes the authoritative result endpoint every five seconds. A persistent Node host retains the Socket.io fast path.
+
 ## Socket.io event matrix
 
 | Event | Direction | Payload | Behavior |
