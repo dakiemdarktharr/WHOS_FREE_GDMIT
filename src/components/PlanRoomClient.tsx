@@ -235,7 +235,7 @@ export function PlanRoomClient({ code }: { code: string }) {
   const today = DateTime.now().setZone(context.timezone);
 
   if (!context.userId) {
-    return <main className="landing-shell"><section className="launch-panel cel-panel" aria-label="Join this room">
+    return <main className="room-join-shell"><section className="launch-panel cel-panel" aria-label="Join this room">
       <div className="panel-tab">join a plan</div>
       <h1>Join plan {code}</h1>
       <p>{room ? `${room.memberCount} ${room.memberCount === 1 ? "person" : "people"} already here` : "Loading the room…"}</p>
@@ -258,7 +258,7 @@ export function PlanRoomClient({ code }: { code: string }) {
       <div className="room-layout">
         <section className="schedule-panel cel-panel">
           <div className="schedule-top"><div><p className="section-kicker">your local schedule · {context.timezone}</p><h1>{today.toFormat("LLLL yyyy")}</h1></div><div className="legend"><span className="legend-swatch free" /> free <span className="legend-swatch busy" /> busy hours</div></div>
-          <p className="instruction">Double-click a day to mark busy hours. Your date and hour stay in your local timezone.</p>
+          <p className="instruction">Double-click a day. Lock in your busy hours.</p>
           <div className="weekday-row" aria-hidden="true">{["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => <span key={day}>{day}</span>)}</div>
           <div className="month-grid" aria-label={`${today.toFormat("LLLL yyyy")} calendar`}>
             {Array.from({ length: days[0] ? days[0].weekday % 7 : 0 }, (_, index) => <span className="calendar-spacer" key={`spacer-${index}`} aria-hidden="true" />)}
@@ -266,12 +266,13 @@ export function PlanRoomClient({ code }: { code: string }) {
               const date = day.toFormat("yyyy-MM-dd");
               const hours = availability[date];
               const changed = hours !== undefined;
-              return <button type="button" key={date} className={`day-tile ${changed ? "has-data" : ""} ${day.hasSame(today, "day") ? "today" : ""}`} onDoubleClick={() => openDay(day)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDay(day); } }} onClick={() => setStatus("Double-click or press Enter to edit busy hours")} aria-label={`${day.toFormat("cccc, LLLL d")}${changed ? `, ${hours.length} busy hours` : ""}. Double-click or press Enter to edit.`} title="Double-click to edit busy hours">
+              return <button type="button" key={date} className={`day-tile ${changed ? "has-data" : ""} ${hours?.length ? "is-enchanted" : ""} ${day.hasSame(today, "day") ? "today" : ""}`} onDoubleClick={() => openDay(day)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDay(day); } }} onClick={() => setStatus("Double-click or press Enter to edit busy hours")} aria-label={`${day.toFormat("cccc, LLLL d")}${changed ? `, ${hours.length} busy hours` : ""}. Double-click or press Enter to edit.`} title="Double-click to edit busy hours">
+                {!!hours?.length && <span className="enchantment-glint" aria-hidden="true" />}
                 <span className="day-number">{day.day}</span>{changed && <span className="day-mark">{hours.length === 0 ? "wide open" : `${hours.length} busy`}</span>}
               </button>;
             })}
           </div>
-          <div className="calendar-footnote"><span className="sparkle" aria-hidden="true">✦</span> Saved hours are private until you submit your schedule.</div>
+          <div className="calendar-footnote"><span className="sparkle" aria-hidden="true">✦</span> Draft saved on this device.</div>
         </section>
         <aside className="room-sidebar">
           <section className="members-card cel-panel"><div className="card-heading"><h2>the crew</h2><span>{submittedCount}/{memberCount} submitted</span></div>
@@ -287,11 +288,29 @@ export function PlanRoomClient({ code }: { code: string }) {
 }
 
 function HourEditor({ date, hours, timezone, onToggle, onSave, onClose }: { date: string; hours: number[]; timezone: string; onToggle: (hour: number) => void; onSave: () => void; onClose: () => void }) {
+  const [lockingHour, setLockingHour] = useState<number | null>(null);
   const label = DateTime.fromISO(date, { zone: timezone }).toFormat("cccc, LLLL d");
   return <main className="editor-shell"><section className="editor-panel cel-panel" aria-labelledby="inspector-title">
-    <button type="button" className="back-button" onClick={onClose}>← back to the month</button>
-    <div className="editor-heading"><div><p className="section-kicker">busy hour inspector · {timezone}</p><h1 id="inspector-title">{label}</h1><p>Select each hour as Free or Busy. Your edits remain saved as a draft when you close.</p></div><div className="editor-count"><strong>{hours.length}</strong><span>busy hours</span></div></div>
-    <div className="hour-grid-scroll" role="region" aria-label={`24 hours for ${label}`} tabIndex={0}><div className="hour-grid">{Array.from({ length: 24 }, (_, hour) => { const busy = hours.includes(hour); return <button type="button" key={hour} className={`hour-cell ${busy ? "is-busy" : ""}`} onClick={() => onToggle(hour)} aria-pressed={busy} aria-label={`${DateTime.fromObject({ hour }, { zone: timezone }).toFormat("h a")}, ${busy ? "Busy" : "Free"}`}><span>{String(hour).padStart(2, "0")}</span><small>{DateTime.fromObject({ hour }, { zone: timezone }).toFormat("ha")}</small><b>{busy ? "Busy" : "Free"}</b></button>; })}</div></div>
-    <div className="editor-actions"><span>Press Escape to close · your draft is kept</span><button type="button" className="primary-button" onClick={onSave}>Done with this day</button></div>
+    <button type="button" className="back-button" onClick={onClose}>← Calendar</button>
+    <div className="editor-heading"><div><p className="section-kicker">{timezone}</p><h1 id="inspector-title">{label}</h1><p>Tap to lock busy. Tap again to free.</p></div><div className="editor-count" aria-live="polite"><strong>{hours.length}</strong><span>busy hours</span></div></div>
+    <div className="hour-grid-scroll" role="region" aria-label={`24 hours for ${label}`} tabIndex={0}>
+      <div className="hour-grid">{Array.from({ length: 24 }, (_, hour) => {
+        const busy = hours.includes(hour);
+        return <button type="button" key={hour}
+          className={`hour-cell ${busy ? "is-busy" : ""} ${lockingHour === hour && busy ? "is-locking" : ""}`}
+          onClick={() => { setLockingHour(busy ? null : hour); onToggle(hour); }}
+          onAnimationEnd={(event) => { if (event.animationName === "hour-lock") setLockingHour((current) => current === hour ? null : current); }}
+          aria-pressed={busy} aria-label={`${DateTime.fromObject({ hour }, { zone: timezone }).toFormat("h a")}, ${busy ? "Busy" : "Free"}`}>
+          <span>{String(hour).padStart(2, "0")}</span>
+          <svg className="hour-lock-icon" viewBox="0 0 24 28" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+            <path className="lock-shackle" d="M6 13V8a6 6 0 0 1 12 0v5" />
+            <rect x="3" y="12" width="18" height="13" rx="3" />
+            <path d="M12 17v4" />
+          </svg>
+          <b>{busy ? "Busy" : "Free"}</b>
+        </button>;
+      })}</div>
+    </div>
+    <div className="editor-actions"><span>ESC · draft saved</span><button type="button" className="primary-button" onClick={onSave}>Done</button></div>
   </section></main>;
 }

@@ -150,6 +150,16 @@ availableCount = submittedMemberCount - busyCount
 
 Sort ascending by `busyCount`, then ascending by UTC instant. Return the top 12 slots (the top result window size defined in the API contract). The result endpoint projects adjacent recommended one-hour slots with the same available participants into explicit time spans and names every free participant for each span. This projection never exposes raw busy-hour submissions. If no slot is free for every member, the top slots are the minimum-conflict ones and the result carries an explanation. The UI converts each returned UTC instant into the viewer's local timezone for display. Never calculate by comparing raw local hour integers across timezones.
 
+## Current frontend presentation (2026-09-24)
+
+The active frontend remains in `src/` while the workspace migration is pending. `src/app/layout.tsx` loads the structural styles in `globals.css`, followed by the holographic presentation layer in `chrome.css`. It mounts one decorative fixed backdrop shared by landing, calendar, and hour editor; scrolling moves content without moving the backdrop. The supplied liquid-metal texture is `public/textures/liquid-chrome.png`. A slow CSS light layer animates its iridescence without moving the texture.
+
+Locally hosted Audiowide is the display face; Rajdhani is the interface face. Font binaries and their OFL licenses live in `public/fonts/`, loaded through `next/font/local`. `Landing.tsx` owns the delayed chrome-title entrance, pointer tilt, and scroll-triggered form reveal. Visible copy is deliberately brief; form labels, timezones, errors, and accessible hour labels remain explicit.
+
+`PlanRoomClient.tsx` owns visual feedback only: selecting an hour plays a short snap/padlock animation and retains `aria-pressed`. Deselecting unlocks it. Calendar days with at least one busy hour show a diagonal purple enchantment overlay at opacity `0.5`; the original saved-day background and foreground labels remain intact. Saved empty days have no enchantment. Escape preserves the existing local draft behavior. Reduced-motion preferences disable entrance, tilt, background, lock, and glint animations while preserving all controls and state indicators. The horizontal 24-hour strip scrolls inside its panel on narrow screens.
+
+These presentation changes do not change any API, model, timezone, or scheduling contract.
+
 ## Non-negotiable invariants
 
 - Numeric room codes are exactly five characters and contain only `0..9`.
